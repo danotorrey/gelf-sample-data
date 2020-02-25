@@ -8,11 +8,13 @@ This is useful when generating charts and graphs, and performing GEO-IP lookups.
 
 ## Installation
 1) Run `mvn package`
-2) Run `java -jar gelf-sample-data-1.0-SNAPSHOT-shaded.jar` to start the application.  
+2) Run `java -jar gelf-sample-data-1.0-SNAPSHOT-shaded.jar` to start the application.
+
+You can optionally use the [gelf-sample-data.service](gelf-sample-data.service) systemd service template to run the 
+application as a daemon.
 
 ## Configuration
 The following configuration options are supported with environment variables:
-
 
 * Hostname to send messages to: `GELF_SAMPLE_HOSTNAME` (defaults to: `localhost`)
 * Port to connect on: `GELF_SAMPLE_PORT` (defaults to: `12201`)

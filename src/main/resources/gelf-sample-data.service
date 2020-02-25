@@ -1,0 +1,26 @@
+[Unit]
+Description=Gelf Sample Data Generator
+Documentation=https://github.com/danotorrey/gelf-sample-data/blob/master/README.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+Restart=on-failure
+RestartSec=10
+User=root
+Group=root
+LimitNOFILE=64000
+
+WorkingDirectory=/usr/share/graylog-forwarder
+ExecStart= /usr/bin/java -jar /usr/share/gelf-sample-data/gelf-sample-data-1.0-SNAPSHOT-shaded.jar
+
+# When a JVM receives a SIGTERM signal it exits with 143.
+SuccessExitStatus=143
+
+# Make sure stderr/stdout is captured in the systemd journal.
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
