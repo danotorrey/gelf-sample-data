@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit;
 public class Main {
     private static final Logger LOG = LogManager.getLogger(Main.class);
 
-    public static void main(String[] args) throws IOException, InterruptedException {
+    public static void main(String[] args) throws InterruptedException {
 
         LOG.info("Starting up and sending sample data...");
         final GelfConfiguration gelfConfiguration = new GelfConfiguration("localhost", 12201)
@@ -25,9 +25,10 @@ public class Main {
 
         final GelfTransport gelfTransport = GelfTransports.create(gelfConfiguration);
 
+        //noinspection InfiniteLoopStatement
         while (true) {
             final String messageId = UUID.randomUUID().toString();
-            LOG.info("Sending message [" + messageId + "]");
+            LOG.debug("Sending message [" + messageId + "]");
             gelfTransport.send(buildMessage(messageId));
 
             // Add some randomness to the sleep over time.
