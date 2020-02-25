@@ -1,5 +1,6 @@
 package com.dantorrey;
 
+import com.sun.org.apache.xpath.internal.operations.Bool;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.graylog2.gelfclient.GelfConfiguration;
@@ -8,8 +9,8 @@ import org.graylog2.gelfclient.GelfTransports;
 import org.graylog2.gelfclient.transport.GelfTransport;
 import org.joda.time.DateTime;
 
-import java.io.IOException;
 import java.time.Instant;
+import java.util.Optional;
 import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -17,10 +18,20 @@ import java.util.concurrent.TimeUnit;
 public class Main {
     private static final Logger LOG = LogManager.getLogger(Main.class);
 
+    private static final String GELF_SAMPLE_HOSTNAME = getEnvironmentValue("GELF_SAMPLE_HOSTNAME", "localhost");
+    private static int GELF_SAMPLE_PORT = Integer.parseInt(getEnvironmentValue("GELF_SAMPLE_PORT", "12201"));
+    private static int GELF_SAMPLE_MAX_SLEEP_TIME = Integer.parseInt(getEnvironmentValue("GELF_SAMPLE_MAX_SLEEP_TIME", "100"));
+    private static boolean GELF_SAMPLE_NO_SLEEP = Boolean.parseBoolean(getEnvironmentValue("GELF_SAMPLE_NO_SLEEP", "false"));
+
+    private static String getEnvironmentValue(String key, String defaultValue) {
+        return Optional.ofNullable(System.getenv(key))
+                       .orElse(defaultValue);
+    }
+
     public static void main(String[] args) throws InterruptedException {
 
         LOG.info("Starting up and sending sample data...");
-        final GelfConfiguration gelfConfiguration = new GelfConfiguration("localhost", 12201)
+        final GelfConfiguration gelfConfiguration = new GelfConfiguration(GELF_SAMPLE_HOSTNAME, GELF_SAMPLE_PORT)
                 .transport(GelfTransports.TCP);
 
         final GelfTransport gelfTransport = GelfTransports.create(gelfConfiguration);
@@ -33,7 +44,8 @@ public class Main {
 
             // Add some randomness to the sleep over time.
             // Add a fixed additional time within 10 minute span to get a more random message distribution over time.
-            TimeUnit.MILLISECONDS.sleep(calculateDelay()); // Multiply by 10 to amplify the deviation.
+            // Multiply by 10 to amplify the deviation.
+            TimeUnit.MILLISECONDS.sleep(calculateDelay());
         }
     }
 
@@ -41,7 +53,12 @@ public class Main {
      * Calculates a delay that varies more or less as time progresses throughout the hour.
      */
     private static int calculateDelay() {
-        return randomInRange(1, 100) + (DateTime.now().getMinuteOfHour() % 10) * 10;
+
+        if (GELF_SAMPLE_NO_SLEEP) {
+            return 0;
+        }
+
+        return randomInRange(1, GELF_SAMPLE_MAX_SLEEP_TIME) + (DateTime.now().getMinuteOfHour() % 10) * 10;
     }
 
     private static GelfMessage buildMessage(String messageId) {
