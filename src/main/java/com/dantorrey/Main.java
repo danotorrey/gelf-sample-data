@@ -10,6 +10,7 @@ import org.graylog2.gelfclient.transport.GelfTransport;
 import org.joda.time.DateTime;
 
 import java.time.Instant;
+import java.util.Collections;
 import java.util.Optional;
 import java.util.Random;
 import java.util.UUID;
@@ -38,16 +39,64 @@ public class Main {
 
         //noinspection InfiniteLoopStatement
         while (true) {
-            final String messageId = UUID.randomUUID().toString();
-            LOG.debug("Sending message [" + messageId + "]");
-            gelfTransport.send(buildMessage(messageId));
+            String user = pickRandomUser();
+            if (randomInRange(0, 100) <= 7) {
+                LOG.info("Sending Failed Logon event at {}", Instant.now().getEpochSecond());
+                gelfTransport.send(buildBadLogonMessage(UUID.randomUUID().toString(), Instant.now().getEpochSecond(), user));
+                TimeUnit.SECONDS.sleep(randomInRange(3, 10));
+            }
 
-            // Add some randomness to the sleep over time.
-            // Add a fixed additional time within 10 minute span to get a more random message distribution over time.
-            // Multiply by 10 to amplify the deviation.
-            TimeUnit.MILLISECONDS.sleep(calculateDelay());
+            LOG.info("Sending Logon event at {}", Instant.now().getEpochSecond());
+            gelfTransport.send(buildGoodLogonMessage(UUID.randomUUID().toString(), Instant.now().getEpochSecond(), user));
+            TimeUnit.SECONDS.sleep(randomInRange(5,10));
+            LOG.info("Sending Logoff event at {}", Instant.now().getEpochSecond());
+            gelfTransport.send(buildLogoffMessage(UUID.randomUUID().toString(), Instant.now().getEpochSecond(), user));
+
+            TimeUnit.SECONDS.sleep(randomInRange(10, 15));
         }
     }
+
+//    public static void main(String[] args) throws InterruptedException {
+//
+//        LOG.info("Starting up and sending sample data...");
+//        final GelfConfiguration gelfConfiguration = new GelfConfiguration(GELF_SAMPLE_HOSTNAME, GELF_SAMPLE_PORT)
+//                .transport(GelfTransports.TCP);
+//
+//        final GelfTransport gelfTransport = GelfTransports.create(gelfConfiguration);
+//        // OpenSearch anomaly detection needs 150 time intervals to develop a model for detecting anomalies.
+//        // Default time interval is 10 minutes meaning we need 1500 minutes, or 25 hours, of messages to set a baseline.
+//        // Start with the current time and then loop backwards creating 25 hours of messages with normal looking
+//        // logon/logoff behavior, sprinkling a failed logon every now and then. Once the logs have been ingested,
+//        // fire off a string of failed logon attempts to (hopefully) trigger an anomaly with the newly created model.
+//        long curTime = Instant.now().getEpochSecond();
+//        // start creating events 25 hours ago
+//        long eventTime = curTime - 900;
+//        int totalMessages = 0;
+//        int badLogons = 0;
+//        while (eventTime < curTime) {
+//            // throw in a bad logon attempt ~3% of the time
+//            if (randomInRange(0, 100) <= 5) {
+//                //gelfTransport.send(buildBadLogonMessage(UUID.randomUUID().toString(), Instant.now().getEpochSecond()));
+//                eventTime+=3;
+//                badLogons++;
+//            }
+//            LOG.info("EventTime: {}", Instant.now().getEpochSecond());
+//            // 3-6 minute session lengths
+//            long sessionLength = randomInRange(180, 360);
+//            gelfTransport.send(buildGoodLogonMessage(UUID.randomUUID().toString(), Instant.now().getEpochSecond()));
+//            eventTime += sessionLength;
+//            //gelfTransport.send(buildLogoffMessage(UUID.randomUUID().toString(), Instant.now().getEpochSecond()));
+//
+//            eventTime += randomInRange(30, 60);
+//            totalMessages+=2;
+//        }
+//        LOG.info("Total messages sent: {}", totalMessages+badLogons);
+//        LOG.info("Total bad logons attempted: {}", badLogons);
+//        // now that 25 hours of normal data has been established, brute force login 10 times with a 2-second delay
+//        for (int i = 0; i < 10; i++) {
+//            // gelfTransport.send(buildBadLogonMessage(UUID.randomUUID().toString(), curTime+(i*2)));
+//        }
+//    }
 
     /**
      * Calculates a delay that varies more or less as time progresses throughout the hour.
@@ -61,85 +110,217 @@ public class Main {
         return randomInRange(1, GELF_SAMPLE_MAX_SLEEP_TIME) + (DateTime.now().getMinuteOfHour() % 10) * 10;
     }
 
-    private static GelfMessage buildMessage(String messageId) {
+    private static GelfMessage buildGoodLogonMessage(String messageId, long timestamp, String user) {
 
         final GelfMessage gelfMessage = new GelfMessage(messageId);
-        int responseStatus = randomStatus();
-        String method = getRandomMethod();
 
-        gelfMessage.setTimestamp(Instant.now().getEpochSecond());
+        gelfMessage.setTimestamp(timestamp);
 
-        // Building JSON with string concatenation is not fun, but it's
-        gelfMessage.addAdditionalField("CacheCacheStatus", pickRandom("hit", "unknown", "unknown", "unknown"));
-        gelfMessage.addAdditionalField("CacheResponseBytes", randomInRange(50, 1024));
-        gelfMessage.addAdditionalField("CacheResponseStatus", responseStatus);
-        gelfMessage.addAdditionalField("CacheTieredFill", false);
-        gelfMessage.addAdditionalField("ClientASN", 7922);
-        gelfMessage.addAdditionalField("ClientCountry", "us");
-        gelfMessage.addAdditionalField("ClientDeviceType", pickRandom("desktop", "mobile"));
-        gelfMessage.addAdditionalField("ClientIP", randomIp());
-        gelfMessage.addAdditionalField("ClientIPClass", "noRecord");
-        gelfMessage.addAdditionalField("ClientRequestBytes", randomInRange(50, 1024));
-        gelfMessage.addAdditionalField("ClientRequestHost", "graylog.com:8080");
-        gelfMessage.addAdditionalField("ClientRequestMethod", method);
-        gelfMessage.addAdditionalField("ClientRequestPath", "/search");
-        gelfMessage.addAdditionalField("ClientRequestProtocol", pickRandom("HTTP/1.1", "HTTP/2.0"));
-        gelfMessage.addAdditionalField("ClientRequestReferer", pickRandom("graylog.com", "graylog.org", "torch.sh"));
-        gelfMessage.addAdditionalField("ClientRequestURI", "/search");
-        gelfMessage.addAdditionalField("ClientRequestUserAgent", randomAgent());
-        gelfMessage.addAdditionalField("ClientSSLCipher", "NONE");
-        gelfMessage.addAdditionalField("ClientSSLProtocol", "none");
-        gelfMessage.addAdditionalField("ClientSrcPort", 52039);
-        gelfMessage.addAdditionalField("EdgeColoCode", "DFW");
-        gelfMessage.addAdditionalField("EdgeColoID", 15);
-        gelfMessage.addAdditionalField("EdgeEndTimestamp", Instant.now().getEpochSecond());
-        gelfMessage.addAdditionalField("EdgePathingOp", " " + pickRandom("wl", "ban", "chl") + " ");
-        gelfMessage.addAdditionalField("EdgePathingSrc", " " + pickRandom("c", "hot", "macro", "user", "filterBasedFirewall") + " ");
-        gelfMessage.addAdditionalField("EdgePathingStatus", " " + pickRandom("nr", "unknown", "ip", "ctry", "ipr16", "ipr24", "captchaErr", "captchaFail", "captchaNew", "jschlFail", "jschlNew", "jschlErr", "captchaNew", "captchaSucc") + " ");
-        gelfMessage.addAdditionalField("EdgeRateLimitAction", "");
-        gelfMessage.addAdditionalField("EdgeRateLimitID", 0);
-        gelfMessage.addAdditionalField("EdgeRequestHost", "test.com:80");
-        gelfMessage.addAdditionalField("EdgeResponseBytes", randomInRange(50, 1024));
-        gelfMessage.addAdditionalField("EdgeResponseCompressionRatio", 2.48);
-        gelfMessage.addAdditionalField("EdgeResponseContentType", "text/html");
-        gelfMessage.addAdditionalField("EdgeResponseStatus", responseStatus);
-        gelfMessage.addAdditionalField("EdgeServerIP", randomIp());
-        gelfMessage.addAdditionalField("EdgeStartTimestamp", Instant.now().getEpochSecond());
-        gelfMessage.addAdditionalField("OriginIP", randomIp());
-        gelfMessage.addAdditionalField("OriginResponseBytes", randomInRange(50, 1024));
-        gelfMessage.addAdditionalField("OriginResponseHTTPExpires", "");
-        gelfMessage.addAdditionalField("OriginResponseHTTPLastModified", "");
-        gelfMessage.addAdditionalField("OriginResponseStatus", responseStatus);
-        gelfMessage.addAdditionalField("OriginSSLProtocol", "unknown");
-        gelfMessage.addAdditionalField("ParentRayID", "00");
-        gelfMessage.addAdditionalField("RayID", "8709870987");
-        gelfMessage.addAdditionalField("SecurityLevel", "med");
-        gelfMessage.addAdditionalField("WAFAction", "unknown");
-        gelfMessage.addAdditionalField("WAFFlags", "0");
-        gelfMessage.addAdditionalField("WAFMatchedVar", "");
-        gelfMessage.addAdditionalField("WAFProfile", "unknown");
-        gelfMessage.addAdditionalField("WAFRuleID", "");
-        gelfMessage.addAdditionalField("WAFRuleMessage", "");
-        gelfMessage.addAdditionalField("WorkerCPUTime", 0);
-        gelfMessage.addAdditionalField("WorkerStatus", "unknown");
-        gelfMessage.addAdditionalField("WorkerSubrequest", false);
-        gelfMessage.addAdditionalField("WorkerSubrequestCount", 0);
+        gelfMessage.addAdditionalField("winlogbeat_event_created", "2020-09-02T19:21:00.901Z");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_opcode", "Info");
+        gelfMessage.addAdditionalField("winlogbeat_agent_id", "50d1f93d-a25f-418d-aa49-9db8d4ebace8");
+        gelfMessage.addAdditionalField("winlogbeat_ecs_version", "1.5.0");
+        gelfMessage.addAdditionalField("winlogbeat_tags", Collections.singletonList("windows"));
+        gelfMessage.addAdditionalField("winlogbeat_event_code", 4624);
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_VirtualAccount", "%%1843");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_LmPackageName", "-");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_ProcessName", "-");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_ImpersonationLevel", "%%1840");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_AuthenticationPackageName", "Kerberos");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_SubjectDomainName", "-");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_ProcessId", "0x0");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_activity_id", "{6725DC1F-812D-0001-3ADC-25672D81D601}");
+        gelfMessage.addAdditionalField("winlogbeat_event_action", "Logon");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_SubjectLogonId", "0x0");
+        gelfMessage.addAdditionalField("winlogbeat_@timestamp", "2020-09-02T19:20:59.870Z");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_TargetDomainName", "TESTLAB.INTERNAL");
+        gelfMessage.addAdditionalField("winlogbeat_agent_version", "7.9.0");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_RestrictedAdminMode", "-");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_TargetUserSid", "S-1-5-21-98903719-2683663973-4168234638-1134");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_LogonType", "3");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_TransmittedServices", "-");
+        gelfMessage.addAdditionalField("winlogbeat_agent_ephemeral_id", "9126b5d2-e9ee-4573-89f5-aa441a38bf01");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_version", 2);
+        gelfMessage.addAdditionalField("winlogbeat_@metadata_version", "7.9.0");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_record_id", randomInRange(500, 999999));
+        gelfMessage.addAdditionalField("winlogbeat_agent_hostname", "WIN-S7BEGVIPQ2J");
+        gelfMessage.addAdditionalField("winlogbeat_log_level", "information");
+        gelfMessage.addAdditionalField("winlogbeat_@metadata_type", "_doc");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_ElevatedToken", "%%1842");
+        gelfMessage.addAdditionalField("winlogbeat_@metadata_beat", "winlogbeat");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_SubjectUserSid", "S-1-0-0");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_IpAddress", "10.222.111.50");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_TargetLinkedLogonId", "0x0");
+        gelfMessage.addAdditionalField("winlogbeat_event_provider", "Microsoft-Windows-Security-Auditing");
+        gelfMessage.addAdditionalField("beats_type", "winlogbeat");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_TargetOutboundDomainName", "-");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_KeyLength", "0");
+        gelfMessage.addAdditionalField("winlogbeat_agent_name", "WIN-S7BEGVIPQ2J");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_id", 4624);
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_LogonProcessName", "Kerberos");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_SubjectUserName", "-");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_task", "Logon");
+        gelfMessage.addAdditionalField("winlogbeat_host_name", "WIN-S7BEGVIPQ2J.testlab.internal");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_channel", "Security");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_computer_name", "WIN-S7BEGVIPQ2J.testlab.internal");
+        gelfMessage.addAdditionalField("winlogbeat_collector_node_id", "WIN-S7BEGVIPQ2J");
+        gelfMessage.addAdditionalField("winlogbeat_event_kind", "event");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_WorkstationName", "-");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_TargetUserName", user);
+        gelfMessage.addAdditionalField("winlogbeat_winlog_process_thread_id", randomInRange(500, 999999));
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_TargetLogonId", "0x378dbb");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_api", "wineventlog");
+        gelfMessage.addAdditionalField("message", "An account was successfully logged on.\n\nSubject:\n\tSecurity ID:\t\tS-1-0-0\n\tAccount Name:\t\t-\n\tAccount Domain:\t\t-\n\tLogon ID:\t\t0x0\n\nLogon Information:\n\tLogon Type:\t\t3\n\tRestricted Admin Mode:\t-\n\tVirtual Account:\t\tNo\n\tElevated Token:\t\tYes\n\nImpersonation Level:\t\tDelegation\n\nNew Logon:\n\tSecurity ID:\t\tS-1-5-21-98903719-2683663973-4168234638-1134\n\tAccount Name:\t\ttestuser20\n\tAccount Domain:\t\tTESTLAB.INTERNAL\n\tLogon ID:\t\t0x378DBB\n\tLinked Logon ID:\t\t0x0\n\tNetwork Account Name:\t-\n\tNetwork Account Domain:\t-\n\tLogon GUID:\t\t{1864DA6C-2A2A-FE4C-8F29-13244F7ACE37}\n\nProcess Information:\n\tProcess ID:\t\t0x0\n\tProcess Name:\t\t-\n\nNetwork Information:\n\tWorkstation Name:\t-\n\tSource Network Address:\t10.222.111.50\n\tSource Port:\t\t50940\n\nDetailed Authentication Information:\n\tLogon Process:\t\tKerberos\n\tAuthentication Package:\tKerberos\n\tTransited Services:\t-\n\tPackage Name (NTLM only):\t-\n\tKey Length:\t\t0\n\nThis event is generated when a logon session is created. It is generated on the computer that was accessed.\n\nThe subject fields indicate the account on the local system which requested the logon. This is most commonly a service such as the Server service, or a local process such as Winlogon.exe or Services.exe.\n\nThe logon type field indicates the kind of logon that occurred. The most common types are 2 (interactive) and 3 (network).\n\nThe New Logon fields indicate the account for whom the new logon was created, i.e. the account that was logged on.\n\nThe network fields indicate where a remote logon request originated. Workstation name is not always available and may be left blank in some cases.\n\nThe impersonation level field indicates the extent to which a process in the logon session can impersonate.\n\nThe authentication information fields provide detailed information about this specific logon request.\n\t- Logon GUID is a unique identifier that can be used to correlate this event with a KDC event.\n\t- Transited services indicate which intermediate services have participated in this logon request.\n\t- Package name indicates which sub-protocol was used among the NTLM protocols.\n\t- Key length indicates the length of the generated session key. This will be 0 if no session key was requested.");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_IpPort", "50940");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_provider_guid", "{54849625-5478-4994-A5BA-3E3B0328C30D}");
+        gelfMessage.addAdditionalField("winlogbeat_agent_type", "winlogbeat");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_TargetOutboundUserName", "-");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_provider_name", "Microsoft-Windows-Security-Auditing");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_process_pid", 588);
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_LogonGuid", "{1864DA6C-2A2A-FE4C-8F29-13244F7ACE37}");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_keywords", Collections.singletonList("Audit Success"));
+        gelfMessage.addAdditionalField("host", "michael-Precision-5540");
+        gelfMessage.addAdditionalField("version", "1.1");
+        gelfMessage.addAdditionalField("replayed_log", "true");
+        gelfMessage.addAdditionalField("gim_test_id", "WINSEC.100001.00");
+        gelfMessage.addAdditionalField("failed_windows_logon", 0);
 
         return gelfMessage;
     }
 
-    private static Integer randomStatus() {
-        return pickRandom(200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200,
-                          200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200,
-                          200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200,
-                          200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200,
-                          200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200,
-                          200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 300, 301, 302,
-                          304, 307, 400, 401, 403, 404, 410, 500, 501, 503, 550);
+
+    private static GelfMessage buildLogoffMessage(String messageId, long timestamp, String user) {
+
+        final GelfMessage gelfMessage = new GelfMessage(messageId);
+
+        gelfMessage.setTimestamp(timestamp);
+
+        gelfMessage.addAdditionalField("winlogbeat_event_created", "2020-09-02T19:21:00.901Z");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_opcode", "Info");
+        gelfMessage.addAdditionalField("winlogbeat_agent_id", "50d1f93d-a25f-418d-aa49-9db8d4ebace8");
+        gelfMessage.addAdditionalField("winlogbeat_ecs_version", "1.5.0");
+        gelfMessage.addAdditionalField("winlogbeat_tags", Collections.singletonList("windows"));
+        gelfMessage.addAdditionalField("winlogbeat_event_code", 4647);
+        gelfMessage.addAdditionalField("winlogbeat_winlog_activity_id", "{5c1e1a57-814c-0000-631b-1e5c4c81d601}");
+        gelfMessage.addAdditionalField("winlogbeat_event_action", "Logoff");
+        gelfMessage.addAdditionalField("winlogbeat_@timestamp", "2020-09-02T21:20:59.870Z");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_TargetDomainName", "TESTLAB");
+        gelfMessage.addAdditionalField("winlogbeat_agent_version", "7.9.0");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_TargetUserSid", "S-1-5-21-98903719-2683663973-4168234638-1134");
+        gelfMessage.addAdditionalField("winlogbeat_agent_ephemeral_id", "9126b5d2-e9ee-4573-89f5-aa441a38bf01");
+        gelfMessage.addAdditionalField("winlogbeat_@metadata_version", "7.9.0");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_record_id", randomInRange(500, 999999));
+        gelfMessage.addAdditionalField("winlogbeat_agent_hostname", "WIN-S7BEGVIPQ2J");
+        gelfMessage.addAdditionalField("winlogbeat_log_level", "information");
+        gelfMessage.addAdditionalField("winlogbeat_@metadata_type", "_doc");
+        gelfMessage.addAdditionalField("winlogbeat_@metadata_beat", "winlogbeat");
+        gelfMessage.addAdditionalField("winlogbeat_event_provider", "Microsoft-Windows-Security-Auditing");
+        gelfMessage.addAdditionalField("beats_type", "winlogbeat");
+        gelfMessage.addAdditionalField("winlogbeat_agent_name", "WIN-S7BEGVIPQ2J");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_id", 4647);
+        gelfMessage.addAdditionalField("winlogbeat_winlog_task", "Logoff");
+        gelfMessage.addAdditionalField("winlogbeat_host_name", "WIN-S7BEGVIPQ2J.testlab.internal");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_channel", "Security");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_computer_name", "WIN-S7BEGVIPQ2J.testlab.internal");
+        gelfMessage.addAdditionalField("winlogbeat_collector_node_id", "WIN-S7BEGVIPQ2J");
+        gelfMessage.addAdditionalField("winlogbeat_event_kind", "event");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_TargetUserName", user);
+        gelfMessage.addAdditionalField("winlogbeat_winlog_process_thread_id", randomInRange(500, 999999));
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_TargetLogonId", "0x3b82f4");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_api", "wineventlog");
+        gelfMessage.addAdditionalField("message", "User initiated logoff:\n\nSubject:\n\tSecurity ID:\t\tS-1-5-21-98903719-2683663973-4168234638-1134\n\tAccount Name:\t\ttestuser20\n\tAccount Domain:\t\tTESTLAB\n\tLogon ID:\t\t0x3B82F4\n\nThis event is generated when a logoff is initiated. No further user-initiated activity can occur. This event can be interpreted as a logoff event.");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_provider_guid", "{54849625-5478-4994-A5BA-3E3B0328C30D}");
+        gelfMessage.addAdditionalField("winlogbeat_agent_type", "winlogbeat");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_TargetOutboundUserName", "-");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_provider_name", "Microsoft-Windows-Security-Auditing");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_process_pid", randomInRange(500, 999999));
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_LogonGuid", "{1864DA6C-2A2A-FE4C-8F29-13244F7ACE37}");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_keywords", Collections.singletonList("Audit Success"));
+        gelfMessage.addAdditionalField("host", "michael-Precision-5540");
+        gelfMessage.addAdditionalField("replayed_log", "true");
+        gelfMessage.addAdditionalField("gim_test_id", "WINSEC.100001.00");
+        gelfMessage.addAdditionalField("failed_windows_logon", 0);
+
+        return gelfMessage;
     }
 
-    private static String getRandomMethod() {
-        return pickRandom("GET", "GET", "GET", "GET", "GET", "POST", "DELETE", "PUT");
+    private static GelfMessage buildBadLogonMessage(String messageId, long timestamp, String user) {
+
+        final GelfMessage gelfMessage = new GelfMessage(messageId);
+
+        gelfMessage.setTimestamp(timestamp);
+
+        gelfMessage.addAdditionalField("winlogbeat_event_created", "2020-09-02T19:22:10.222Z");
+        gelfMessage.addAdditionalField("winlogbeat_agent_id", "50d1f93d-a25f-418d-aa49-9db8d4ebace8");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_opcode", "Info");
+        gelfMessage.addAdditionalField("winlogbeat_ecs_version", "1.5.0");
+        gelfMessage.addAdditionalField("winlogbeat_tags", Collections.singletonList("windows"));
+        gelfMessage.addAdditionalField("winlogbeat_event_code", 4625);
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_LmPackageName", "-");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_ProcessName", "-");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_AuthenticationPackageName", "NTLM");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_SubjectDomainName", "-");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_ProcessId", "0x0");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_FailureReason", "%%2313");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_activity_id", "{5c1e1a57-814c-0000-631b-1e5c4c81d601}");
+        gelfMessage.addAdditionalField("winlogbeat_event_action", "Logon");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_SubjectLogonId", "0x0");
+        gelfMessage.addAdditionalField("winlogbeat_@timestamp", "2020-09-02T19:21:38.082Z");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_TargetDomainName", "testlab.internal");
+        gelfMessage.addAdditionalField("winlogbeat_agent_version", "7.9.0");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_TargetUserSid", "S-1-0-0");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_TransmittedServices", "-");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_LogonType", "3");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_SubStatus", "0xc000006e");
+        gelfMessage.addAdditionalField("winlogbeat_agent_ephemeral_id", "9126b5d2-e9ee-4573-89f5-aa441a38bf01");
+        gelfMessage.addAdditionalField("winlogbeat_@metadata_version", "7.9.0");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_record_id", randomInRange(1000, 999999));
+        gelfMessage.addAdditionalField("winlogbeat_agent_hostname", "hacking-laptop");
+        gelfMessage.addAdditionalField("winlogbeat_log_level", "information");
+        gelfMessage.addAdditionalField("winlogbeat_@metadata_type", "_doc");
+        gelfMessage.addAdditionalField("winlogbeat_@metadata_beat", "winlogbeat");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_SubjectUserSid", "S-1-0-0");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_IpAddress", "10.222.111.1");
+        gelfMessage.addAdditionalField("winlogbeat_event_provider", "Microsoft-Windows-Security-Auditing");
+        gelfMessage.addAdditionalField("beats_type", "winlogbeat");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_KeyLength", "0");
+        gelfMessage.addAdditionalField("winlogbeat_agent_name", "hacking-laptop");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_id", 4625);
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_Status", "0xc000006e");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_LogonProcessName", "NtLmSsp");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_SubjectUserName", "-");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_task", "Logon");
+        gelfMessage.addAdditionalField("winlogbeat_host_name", "DESKTOP-HMVU4PF.testlab.internal");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_channel", "Security");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_computer_name", "DESKTOP-HMVU4PF.testlab.internal");
+        gelfMessage.addAdditionalField("winlogbeat_collector_node_id", "hacking-laptop");
+        gelfMessage.addAdditionalField("winlogbeat_event_kind", "event");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_WorkstationName", "hacking-laptop");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_TargetUserName", user);
+        gelfMessage.addAdditionalField("winlogbeat_winlog_process_thread_id", randomInRange(500, 999999));
+        gelfMessage.addAdditionalField("winlogbeat_winlog_api", "wineventlog");
+        gelfMessage.addAdditionalField("message", "An account failed to log on.\n\nSubject:\n\tSecurity ID:\t\tS-1-0-0\n\tAccount Name:\t\t-\n\tAccount Domain:\t\t-\n\tLogon ID:\t\t0x0\n\nLogon Type:\t\t\t3\n\nAccount For Which Logon Failed:\n\tSecurity ID:\t\tS-1-0-0\n\tAccount Name:\t\tbadguy\n\tAccount Domain:\t\ttestlab.internal\n\nFailure Information:\n\tFailure Reason:\t\tUnknown user name or bad password.\n\tStatus:\t\t\t0xC000006E\n\tSub Status:\t\t0xC000006E\n\nProcess Information:\n\tCaller Process ID:\t0x0\n\tCaller Process Name:\t-\n\nNetwork Information:\n\tWorkstation Name:\thacking-laptop\n\tSource Network Address:\t10.222.111.1\n\tSource Port:\t\t0\n\nDetailed Authentication Information:\n\tLogon Process:\t\tNtLmSsp \n\tAuthentication Package:\tNTLM\n\tTransited Services:\t-\n\tPackage Name (NTLM only):\t-\n\tKey Length:\t\t0\n\nThis event is generated when a logon request fails. It is generated on the computer where access was attempted.\n\nThe Subject fields indicate the account on the local system which requested the logon. This is most commonly a service such as the Server service, or a local process such as Winlogon.exe or Services.exe.\n\nThe Logon Type field indicates the kind of logon that was requested. The most common types are 2 (interactive) and 3 (network).\n\nThe Process Information fields indicate which account and process on the system requested the logon.\n\nThe Network Information fields indicate where a remote logon request originated. Workstation name is not always available and may be left blank in some cases.\n\nThe authentication information fields provide detailed information about this specific logon request.\n\t- Transited services indicate which intermediate services have participated in this logon request.\n\t- Package name indicates which sub-protocol was used among the NTLM protocols.\n\t- Key length indicates the length of the generated session key. This will be 0 if no session key was requested.");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_event_data_IpPort", "0");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_provider_guid", "{54849625-5478-4994-a5ba-3e3b0328c30d}");
+        gelfMessage.addAdditionalField("winlogbeat_agent_type", "winlogbeat");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_provider_name", "Microsoft-Windows-Security-Auditing");
+        gelfMessage.addAdditionalField("winlogbeat_winlog_process_pid", randomInRange(500, 999999));
+        gelfMessage.addAdditionalField("winlogbeat_winlog_keywords", Collections.singletonList("Audit Failure"));
+        gelfMessage.addAdditionalField("host", "hacking-laptop");
+        gelfMessage.addAdditionalField("replayed_log", "true");
+        gelfMessage.addAdditionalField("gim_test_id", "WINSEC.100001.00");
+        gelfMessage.addAdditionalField("failed_windows_logon", 1);
+
+        return gelfMessage;
+    }
+
+    private static String pickRandomUser() {
+        return pickRandom("testuser20", "zking", "badguy", "graylog_user1", "another_user", "user2", "admin", "reader");
+    }
+
+    private static int randomInRange(int min, int max) {
+        Random random = new Random();
+        return random.nextInt((max - min) + 1) + min;
     }
 
     private static String pickRandom(String... strings) {
@@ -148,46 +329,4 @@ public class Main {
         return strings[index];
     }
 
-    private static Integer pickRandom(Integer... integers) {
-        Random random = new Random();
-        int index = random.nextInt(integers.length);
-        return integers[index];
-    }
-
-    private static int randomInRange(int min, int max) {
-        Random random = new Random();
-        return random.nextInt((max - min) + 1) + min;
-    }
-
-    private static String randomIp() {
-        return randomInRange(10, 254) + "." + randomInRange(10, 254) + "." + randomInRange(10, 254) + "." + randomInRange(10, 254);
-    }
-
-    private static String randomAgent() {
-
-        return pickRandom("Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1; SV1)",
-                          "Mozilla/4.0 (compatible; MSIE 8.0; Windows NT 5.1; Trident/4.0; .NET CLR 1.1.4322; .NET CLR 2.0.50727; .NET CLR 3.0.4506.2152; .NET CLR 3.5.30729)",
-                          "Mozilla/5.0 (compatible, MSIE 11, Windows NT 6.3; Trident/7.0; rv:11.0) like Gecko",
-                          "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
-                          "Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 6.2; Trident/6.0; MDDCJS)",
-                          "Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.0; Trident/5.0;  Trident/5.0)",
-                          "Mozilla/5.0 (iPad; CPU OS 8_4_1 like Mac OS X) AppleWebKit/600.1.4 (KHTML, like Gecko) Version/8.0 Mobile/12H321 Safari/600.1.4",
-                          "Mozilla/5.0 (iPad; CPU OS 9_3_5 like Mac OS X) AppleWebKit/601.1.46 (KHTML, like Gecko) Version/9.0 Mobile/13G36 Safari/601.1",
-                          "Mozilla/5.0 (iPhone; CPU iPhone OS 10_3 like Mac OS X) AppleWebKit/602.1.50 (KHTML, like Gecko) CriOS/56.0.2924.75 Mobile/14E5239e Safari/602.1",
-                          "Mozilla/5.0 (iPhone; CPU iPhone OS 10_3 like Mac OS X) AppleWebKit/603.1.23 (KHTML, like Gecko) Version/10.0 Mobile/14E5239e Safari/602.1When the Request Desktop Site feature is enabled, the Desktop Safari UA is sent:",
-                          "Mozilla/5.0 (iPhone; CPU iPhone OS 10_3_1 like Mac OS X) AppleWebKit/603.1.30 (KHTML, like Gecko) Version/10.0 Mobile/14E304 Safari/602.1",
-                          "Mozilla/5.0 (iPhone; CPU iPhone OS 10_3_3 like Mac OS X) AppleWebKit/603.3.8 (KHTML, like Gecko) Version/10.0 Mobile/14G60 Safari/602.1",
-                          "Mozilla/5.0 (iPhone; CPU iPhone OS 11_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/11.0 Mobile/15E148 Safari/604.1",
-                          "Mozilla/5.0 (Linux; <Android Version>; <Build Tag etc.>) AppleWebKit/<WebKit Rev> (KHTML, like Gecko) Chrome/<Chrome Rev> Mobile Safari/<WebKit Rev>",
-                          "Mozilla/5.0 (Linux; <Android Version>; <Build Tag etc.>) AppleWebKit/<WebKit Rev>(KHTML, like Gecko) Chrome/<Chrome Rev> Safari/<WebKit Rev>",
-                          "Mozilla/5.0 (Linux; Android 4.0.4; Galaxy Nexus Build/IMM76B) AppleWebKit/535.19 (KHTML, like Gecko) Chrome/18.0.1025.133 Mobile Safari/535.19",
-                          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_4) AppleWebKit/600.7.12 (KHTML, like Gecko) Version/8.0.7 Safari/600.7.12",
-                          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/12.0.1 Safari/605.1.15",
-                          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/12.1 Safari/605.1.15",
-                          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/12.1.1 Safari/605.1.15",
-                          "Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10_6_6; en-en) AppleWebKit/533.19.4 (KHTML, like Gecko) Version/5.0.3 Safari/533.19.4",
-                          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.79 Safari/537.36 Edge/14.14393",
-                          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36",
-                          "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:53.0) Gecko/20100101 Firefox/53.0");
-    }
 }
