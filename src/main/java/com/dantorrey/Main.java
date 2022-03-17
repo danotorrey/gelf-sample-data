@@ -37,84 +37,44 @@ public class Main {
 
         final GelfTransport gelfTransport = GelfTransports.create(gelfConfiguration);
 
-        //noinspection InfiniteLoopStatement
-        while (true) {
+        // start creating events 25 hours ago
+        long secondsAgo = 90000;
+        int totalMessages = 30000;
+        int badLogons = 0;
+        while (secondsAgo > 0) {
             String user = pickRandomUser();
-            if (randomInRange(0, 100) <= 7) {
-                LOG.info("Sending Failed Logon event at {}", Instant.now().getEpochSecond());
-                gelfTransport.send(buildBadLogonMessage(UUID.randomUUID().toString(), Instant.now().getEpochSecond(), user));
-                TimeUnit.SECONDS.sleep(randomInRange(3, 10));
+            // Three percent of the time throw in a single bad login
+            if (randomInRange(0, 100) <= 3) {
+                // LOG.info("Sending failed Logon event for user {}", user);
+                gelfTransport.send(buildBadLogonMessage(UUID.randomUUID().toString(), secondsAgo, user));
+                secondsAgo -= randomInRange(3, 10);
+                badLogons++;
             }
 
-            LOG.info("Sending Logon event at {}", Instant.now().getEpochSecond());
-            gelfTransport.send(buildGoodLogonMessage(UUID.randomUUID().toString(), Instant.now().getEpochSecond(), user));
-            TimeUnit.SECONDS.sleep(randomInRange(5,10));
-            LOG.info("Sending Logoff event at {}", Instant.now().getEpochSecond());
-            gelfTransport.send(buildLogoffMessage(UUID.randomUUID().toString(), Instant.now().getEpochSecond(), user));
+            // every 1 in 1000, throw in a brute force attack
+            if (randomInRange(0, 1000) <= 1) {
+                LOG.info("Sending 20 failed Logon events for user {} at {}", user, Instant.now().minusSeconds(secondsAgo).toString());
+                for (int i = 0; i < 20; i++) {
+                    gelfTransport.send(buildBadLogonMessage(UUID.randomUUID().toString(), secondsAgo, user));
+                }
+                badLogons += 20;
+            }
 
-            TimeUnit.SECONDS.sleep(randomInRange(10, 15));
+            // LOG.info("Sending Logon/Logoff events for user {}", user);
+            gelfTransport.send(buildGoodLogonMessage(UUID.randomUUID().toString(), secondsAgo, user));
+            secondsAgo -= randomInRange(5,10);
+            gelfTransport.send(buildLogoffMessage(UUID.randomUUID().toString(), secondsAgo, user));
+            totalMessages += 2;
+            secondsAgo -= randomInRange(10, 15);
         }
+        LOG.info("Total Messages sent: {}", totalMessages+badLogons);
+        LOG.info("Total bad logins: {}", badLogons);
     }
 
-//    public static void main(String[] args) throws InterruptedException {
-//
-//        LOG.info("Starting up and sending sample data...");
-//        final GelfConfiguration gelfConfiguration = new GelfConfiguration(GELF_SAMPLE_HOSTNAME, GELF_SAMPLE_PORT)
-//                .transport(GelfTransports.TCP);
-//
-//        final GelfTransport gelfTransport = GelfTransports.create(gelfConfiguration);
-//        // OpenSearch anomaly detection needs 150 time intervals to develop a model for detecting anomalies.
-//        // Default time interval is 10 minutes meaning we need 1500 minutes, or 25 hours, of messages to set a baseline.
-//        // Start with the current time and then loop backwards creating 25 hours of messages with normal looking
-//        // logon/logoff behavior, sprinkling a failed logon every now and then. Once the logs have been ingested,
-//        // fire off a string of failed logon attempts to (hopefully) trigger an anomaly with the newly created model.
-//        long curTime = Instant.now().getEpochSecond();
-//        // start creating events 25 hours ago
-//        long eventTime = curTime - 900;
-//        int totalMessages = 0;
-//        int badLogons = 0;
-//        while (eventTime < curTime) {
-//            // throw in a bad logon attempt ~3% of the time
-//            if (randomInRange(0, 100) <= 5) {
-//                //gelfTransport.send(buildBadLogonMessage(UUID.randomUUID().toString(), Instant.now().getEpochSecond()));
-//                eventTime+=3;
-//                badLogons++;
-//            }
-//            LOG.info("EventTime: {}", Instant.now().getEpochSecond());
-//            // 3-6 minute session lengths
-//            long sessionLength = randomInRange(180, 360);
-//            gelfTransport.send(buildGoodLogonMessage(UUID.randomUUID().toString(), Instant.now().getEpochSecond()));
-//            eventTime += sessionLength;
-//            //gelfTransport.send(buildLogoffMessage(UUID.randomUUID().toString(), Instant.now().getEpochSecond()));
-//
-//            eventTime += randomInRange(30, 60);
-//            totalMessages+=2;
-//        }
-//        LOG.info("Total messages sent: {}", totalMessages+badLogons);
-//        LOG.info("Total bad logons attempted: {}", badLogons);
-//        // now that 25 hours of normal data has been established, brute force login 10 times with a 2-second delay
-//        for (int i = 0; i < 10; i++) {
-//            // gelfTransport.send(buildBadLogonMessage(UUID.randomUUID().toString(), curTime+(i*2)));
-//        }
-//    }
-
-    /**
-     * Calculates a delay that varies more or less as time progresses throughout the hour.
-     */
-    private static int calculateDelay() {
-
-        if (GELF_SAMPLE_NO_SLEEP) {
-            return 0;
-        }
-
-        return randomInRange(1, GELF_SAMPLE_MAX_SLEEP_TIME) + (DateTime.now().getMinuteOfHour() % 10) * 10;
-    }
-
-    private static GelfMessage buildGoodLogonMessage(String messageId, long timestamp, String user) {
+    private static GelfMessage buildGoodLogonMessage(String messageId, long ago, String user) {
 
         final GelfMessage gelfMessage = new GelfMessage(messageId);
-
-        gelfMessage.setTimestamp(timestamp);
+        gelfMessage.setTimestamp(Math.floor(gelfMessage.getTimestamp()-ago));
 
         gelfMessage.addAdditionalField("winlogbeat_event_created", "2020-09-02T19:21:00.901Z");
         gelfMessage.addAdditionalField("winlogbeat_winlog_opcode", "Info");
@@ -189,11 +149,11 @@ public class Main {
     }
 
 
-    private static GelfMessage buildLogoffMessage(String messageId, long timestamp, String user) {
+    private static GelfMessage buildLogoffMessage(String messageId, long ago, String user) {
 
         final GelfMessage gelfMessage = new GelfMessage(messageId);
 
-        gelfMessage.setTimestamp(timestamp);
+        gelfMessage.setTimestamp(Math.floor(gelfMessage.getTimestamp()-ago));
 
         gelfMessage.addAdditionalField("winlogbeat_event_created", "2020-09-02T19:21:00.901Z");
         gelfMessage.addAdditionalField("winlogbeat_winlog_opcode", "Info");
@@ -244,11 +204,11 @@ public class Main {
         return gelfMessage;
     }
 
-    private static GelfMessage buildBadLogonMessage(String messageId, long timestamp, String user) {
+    private static GelfMessage buildBadLogonMessage(String messageId, long ago, String user) {
 
         final GelfMessage gelfMessage = new GelfMessage(messageId);
 
-        gelfMessage.setTimestamp(timestamp);
+        gelfMessage.setTimestamp(Math.floor(gelfMessage.getTimestamp()-ago));
 
         gelfMessage.addAdditionalField("winlogbeat_event_created", "2020-09-02T19:22:10.222Z");
         gelfMessage.addAdditionalField("winlogbeat_agent_id", "50d1f93d-a25f-418d-aa49-9db8d4ebace8");
