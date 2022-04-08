@@ -39,7 +39,7 @@ public class Main {
 
         // start creating events 25 hours ago
         long secondsAgo = 90000;
-        int totalMessages = 30000;
+        int totalMessages = 0;
         int badLogons = 0;
         while (secondsAgo > 0) {
             String user = pickRandomUser();
