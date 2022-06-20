@@ -315,7 +315,9 @@ public class Main {
     }
 
     private static String pickRandomUser() {
-        return pickRandom("testuser20", "zking", "badguy", "graylog_user1", "another_user", "user2", "admin", "reader");
+        return pickRandom("testuser20", "zking", "badguy", "graylog_user1", "another_user", "user2", "admin", "reader",
+                "testuser30", "rcurtis", "testuser40", "graylog_user2", "another_user4", "user2123", "admin5", "reader2",
+                "testuser50", "dtorrey", "rbenitez", "mklein", "shuang", "randomuser");
     }
 
     private static int randomInRange(int min, int max) {
